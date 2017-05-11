@@ -61,8 +61,8 @@ class Pygtail(object):
     on_update     Execute this function when offset data is written (default False)
     copytruncate  Support copytruncate-style log rotation (default: True)
     """
-    def __init__(self, filename, encoding=None, offset_file=None, paranoid=False, copytruncate=True,
-                 every_n=0, on_update=False):
+    def __init__(self, filename, offset_file=None, paranoid=False, copytruncate=True,
+                 every_n=0, on_update=False, encoding=None):
         self.filename = filename
         self.encoding = encoding
         self.paranoid = paranoid
