@@ -28,6 +28,7 @@ from os.path import exists, getsize
 import sys
 import glob
 import gzip
+import lzma
 from optparse import OptionParser
 
 __version__ = '0.6.1'
@@ -170,6 +171,8 @@ class Pygtail(object):
             filename = self._rotated_logfile or self.filename
             if filename.endswith('.gz'):
                 self._fh = gzip.open(filename, 'r', encoding=self.encoding)
+            if filename.endswith('.xz'):
+                self._fh = lzma.open(filename, 'r', encoding=self.encoding)
             else:
                 self._fh = open(filename, "r", 1, encoding=self.encoding)
             self._fh.seek(self._offset)
@@ -238,11 +241,11 @@ class Pygtail(object):
             # logrotate dateext rotation scheme - `dateformat -%Y%m%d` + with `delaycompress`
             "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]",
             # logrotate dateext rotation scheme - `dateformat -%Y%m%d` + without `delaycompress`
-            "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].gz",
+            "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].[gx]z",
             # logrotate dateext rotation scheme - `dateformat -%Y%m%d-%s` + with `delaycompress`
             "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]",
             # logrotate dateext rotation scheme - `dateformat -%Y%m%d-%s` + without `delaycompress`
-            "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].gz",
+            "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].[gx]z",
             # for TimedRotatingFileHandler
             ".[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]",
         )
