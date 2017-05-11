@@ -171,7 +171,7 @@ class Pygtail(object):
             filename = self._rotated_logfile or self.filename
             if filename.endswith('.gz'):
                 self._fh = gzip.open(filename, 'r', encoding=self.encoding)
-            if filename.endswith('.xz'):
+            elif filename.endswith('.xz'):
                 self._fh = lzma.open(filename, 'r', encoding=self.encoding)
             else:
                 self._fh = open(filename, "r", 1, encoding=self.encoding)
