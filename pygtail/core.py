@@ -60,9 +60,10 @@ class Pygtail(object):
     on_update     Execute this function when offset data is written (default False)
     copytruncate  Support copytruncate-style log rotation (default: True)
     """
-    def __init__(self, filename, offset_file=None, paranoid=False, copytruncate=True,
+    def __init__(self, filename, encoding=None, offset_file=None, paranoid=False, copytruncate=True,
                  every_n=0, on_update=False):
         self.filename = filename
+        self.encoding = encoding
         self.paranoid = paranoid
         self.every_n = every_n
         self.on_update = on_update
@@ -168,9 +169,9 @@ class Pygtail(object):
         if not self._fh or self._is_closed():
             filename = self._rotated_logfile or self.filename
             if filename.endswith('.gz'):
-                self._fh = gzip.open(filename, 'r')
+                self._fh = gzip.open(filename, 'r', encoding=self.encoding)
             else:
-                self._fh = open(filename, "r", 1)
+                self._fh = open(filename, "r", 1, encoding=self.encoding)
             self._fh.seek(self._offset)
 
         return self._fh
