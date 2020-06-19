@@ -1,5 +1,6 @@
 import os
 import sys
+
 try:
     # python 2.6
     import unittest2 as unittest
@@ -9,7 +10,9 @@ import shutil
 import tempfile
 import gzip
 import io
+
 from pygtail import Pygtail
+
 
 PY2 = sys.version_info[0] == 2
 
@@ -62,6 +65,14 @@ class PygtailTest(unittest.TestCase):
         new_lines = "4\n5\n"
         self.append(new_lines)
         new_pygtail = Pygtail(self.logfile.name)
+        self.assertEqual(new_pygtail.read(), new_lines)
+
+    def test_read_from_the_file_end(self):
+        pygtail = Pygtail(self.logfile.name, read_from_end=True)
+        self.assertEqual(pygtail.read(), None)
+        new_lines = "4\n5\n"
+        self.append(new_lines)
+        new_pygtail = Pygtail(self.logfile.name, read_from_end=True)
         self.assertEqual(new_pygtail.read(), new_lines)
 
     def test_logrotate_without_delay_compress(self):
@@ -164,6 +175,17 @@ class PygtailTest(unittest.TestCase):
         pygtail = Pygtail(self.logfile.name)
         self.assertEqual(pygtail.read(), ''.join(new_lines))
 
+    def test_custom_rotating_file_handler_with_prepend(self):
+        new_lines = ["4\n5\n", "6\n7\n"]
+        pygtail = Pygtail(self.logfile.name)
+        pygtail.read()
+        self.append(new_lines[0])
+        file_dir, rel_filename = os.path.split(self.logfile.name)
+        os.rename(self.logfile.name, os.path.join(file_dir, "custom_log_pattern.%s" % rel_filename))
+        self.append(new_lines[1])
+        pygtail = Pygtail(self.logfile.name, log_patterns=["custom_log_pattern.%s"])
+        self.assertEqual(pygtail.read(), ''.join(new_lines))
+
     def test_copytruncate_off_smaller(self):
         self.test_readlines()
         self.copytruncate()
@@ -227,8 +249,10 @@ class PygtailTest(unittest.TestCase):
 
     def test_on_update_with_paranoid(self):
         updates = [0]
+
         def record_update():
             updates[0] += 1
+
         pygtail = Pygtail(self.logfile.name, paranoid=True,
                           on_update=record_update)
 
@@ -239,7 +263,6 @@ class PygtailTest(unittest.TestCase):
         self.assertEqual(updates[0], 2)
         next(pygtail)
         self.assertEqual(updates[0], 3)
-
 
     def test_on_update_without_paranoid(self):
         updates = [0]
@@ -270,6 +293,35 @@ class PygtailTest(unittest.TestCase):
         self.assertEqual(updates[0], 0)
         for line in pygtail:
             previous_lines += 1
+
+    def test_renamecreate(self):
+        """
+        Tests "renamecreate" semantics where the currently processed file gets renamed and the
+        original file gets recreated. This is the behavior of certain logfile rollers such as
+        TimeBasedRollingPolicy in Java's Logback library.
+        """
+        new_lines = ["4\n5\n", "6\n7\n"]
+        pygtail = Pygtail(self.logfile.name)
+        pygtail.read()
+        os.rename(self.logfile.name, "%s.2018-03-10" % self.logfile.name)
+        # append will recreate the original log file
+        self.append(new_lines[0])
+        self.append(new_lines[1])
+        self.assertEqual(pygtail.read(), ''.join(new_lines))
+
+    def test_full_lines(self):
+        """
+        Tests lines are logged only when they have a new line at the end. This is useful to ensure that log lines
+        aren't unintentionally split up.
+        """
+        pygtail = Pygtail(self.logfile.name, full_lines=True)
+        new_lines = "4\n5,"
+        last_line = "5.5\n6\n"
+
+        self.append(new_lines)
+        pygtail.read()
+        self.append(last_line)
+        self.assertEqual(pygtail.read(), "5,5.5\n6\n")
 
 
 def main():

@@ -23,7 +23,8 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 from __future__ import print_function
-from os import stat
+from os import fstat, stat
+import os
 from os.path import exists, getsize
 import sys
 import glob
@@ -31,7 +32,7 @@ import gzip
 import lzma
 from optparse import OptionParser
 
-__version__ = '0.6.1'
+__version__ = '0.11.1'
 
 
 PY3 = sys.version_info[0] == 3
@@ -60,15 +61,21 @@ class Pygtail(object):
                   we reach the end of the file (default: 0))
     on_update     Execute this function when offset data is written (default False)
     copytruncate  Support copytruncate-style log rotation (default: True)
+    log_patterns  List of custom rotated log patterns to match (default: None)
+    full_lines    Only log when line ends in a newline `\n` (default: False)
     """
     def __init__(self, filename, offset_file=None, paranoid=False, copytruncate=True,
-                 every_n=0, on_update=False, encoding=None):
+                 every_n=0, on_update=False, read_from_end=False, log_patterns=None, full_lines=False,
+                 encoding=None):
         self.filename = filename
         self.encoding = encoding
         self.paranoid = paranoid
         self.every_n = every_n
         self.on_update = on_update
         self.copytruncate = copytruncate
+        self.read_from_end = read_from_end
+        self.log_patterns = log_patterns
+        self._full_lines = full_lines
         self._offset_file = offset_file or "%s.offset" % self.filename
         self._offset_file_inode = 0
         self._offset = 0
@@ -104,9 +111,9 @@ class Pygtail(object):
             line = self._get_next_line()
         except StopIteration:
             # we've reached the end of the file; if we're processing the
-            # rotated log file, we can continue with the actual file; otherwise
+            # rotated log file or the file has been renamed, we can continue with the actual file; otherwise
             # update the offset file
-            if self._rotated_logfile:
+            if self._is_new_file():
                 self._rotated_logfile = None
                 self._fh.close()
                 self._offset = 0
@@ -175,7 +182,10 @@ class Pygtail(object):
                 self._fh = lzma.open(filename, 'r', encoding=self.encoding)
             else:
                 self._fh = open(filename, "r", 1, encoding=self.encoding)
-            self._fh.seek(self._offset)
+            if self.read_from_end and not exists(self._offset_file):
+                self._fh.seek(0, os.SEEK_END)
+            else:
+                self._fh.seek(self._offset)
 
         return self._fh
 
@@ -237,20 +247,26 @@ class Pygtail(object):
         if exists(candidate):
             return candidate
 
-        rotated_filename_patterns = (
+        rotated_filename_patterns = [
             # logrotate dateext rotation scheme - `dateformat -%Y%m%d` + with `delaycompress`
-            "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]",
+            "%s-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]",
             # logrotate dateext rotation scheme - `dateformat -%Y%m%d` + without `delaycompress`
-            "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].[gx]z",
+            "%s-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].[gx]z",
             # logrotate dateext rotation scheme - `dateformat -%Y%m%d-%s` + with `delaycompress`
-            "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]",
+            "%s-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]",
             # logrotate dateext rotation scheme - `dateformat -%Y%m%d-%s` + without `delaycompress`
-            "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].[gx]z",
+            "%s-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].[gx]z",
             # for TimedRotatingFileHandler
-            ".[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]",
-        )
+            "%s.[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]",
+        ]
+        if self.log_patterns:
+            rotated_filename_patterns.extend(self.log_patterns)
+
+        # break into directory and filename components to support cases where the
+        # the file is prepended as part of rotation
+        file_dir, rel_filename = os.path.split(self.filename)
         for rotated_filename_pattern in rotated_filename_patterns:
-            candidates = glob.glob(self.filename + rotated_filename_pattern)
+            candidates = glob.glob(os.path.join(file_dir, rotated_filename_pattern % rel_filename))
             if candidates:
                 candidates.sort()
                 return candidates[-1]  # return most recent
@@ -258,8 +274,19 @@ class Pygtail(object):
         # no match
         return None
 
+    def _is_new_file(self):
+        # Processing rotated logfile or at the end of current file which has been renamed
+        return self._rotated_logfile or \
+               self._filehandle().tell() == fstat(self._filehandle().fileno()).st_size and \
+               fstat(self._filehandle().fileno()).st_ino != stat(self.filename).st_ino
+
     def _get_next_line(self):
+        curr_offset = self._filehandle().tell()
         line = self._filehandle().readline()
+        if self._full_lines:
+            if not line.endswith('\n'):
+                self._filehandle().seek(curr_offset)
+                raise StopIteration
         if not line:
             raise StopIteration
         self._since_update += 1
@@ -281,6 +308,13 @@ def main():
     cmdline.add_option("--no-copytruncate", action="store_true",
         help="Don't support copytruncate-style log rotation. Instead, if the log file"
              " shrinks, print a warning.")
+    cmdline.add_option("--read-from-end", action="store_true",
+        help="Read log file from the end if offset file is missing. Useful for large files.")
+    cmdline.add_option("--log-pattern", action="append",
+        help="Custom log rotation glob pattern. Use %s to represent the original filename."
+             " You may use this multiple times to provide multiple patterns.")
+    cmdline.add_option("--full_lines", action="store_true",
+                       help="Only log when line ends in a newline (\\n)")
     cmdline.add_option("--version", action="store_true",
         help="Print version and exit.")
 
@@ -299,7 +333,11 @@ def main():
                       offset_file=options.offset_file,
                       paranoid=options.paranoid,
                       every_n=options.every_n,
-                      copytruncate=not options.no_copytruncate)
+                      copytruncate=not options.no_copytruncate,
+                      read_from_end=options.read_from_end,
+                      log_patterns=options.log_pattern,
+                      full_lines=options.full_lines
+                      )
 
     for line in pygtail:
         sys.stdout.write(line)

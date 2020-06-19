@@ -30,6 +30,14 @@ From the command line:
                             the file).
       --no-copytruncate     Don't support copytruncate-style log rotation.
                             Instead, if the log file shrinks, print a warning.
+      --read-from-end       Read log file from the end if offset file is
+                            missing. Useful for large files.
+      --log-pattern         Custom log rotation glob pattern. Use %s to
+                            represent the original filename. You may use this
+                            multiple times to provide multiple patterns.
+      --full_lines          Only log when line ends in a newline `\n`
+                            (default: False)
+      --version             Print version and exit.
 
 In your code:
 
@@ -39,6 +47,11 @@ In your code:
 
     for line in Pygtail("some.log"):
         sys.stdout.write(line)
+
+Contributing
+------------
+
+Pull requests are very much welcome, but I will not merge your changes if you don't include a test. Run tests with `python setup.py test`.
 
 Build status
 ------------
